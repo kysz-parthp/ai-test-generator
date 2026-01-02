@@ -91,6 +91,14 @@ export default async function handler(
         if (sampleAnswer) {
           resultData.sampleAnswer = sampleAnswer
         }
+      } else if (question.questionType === 'true_false') {
+        // True/False questions
+        const userAnswerBool = userAnswer === 'true' || userAnswer === true
+        const correctAnswerBool = question.correctAnswer
+        isCorrect = userAnswerBool === correctAnswerBool
+
+        resultData.correctAnswer = correctAnswerBool
+        resultData.userAnswer = userAnswerBool
       } else if (question.questionType === 'matching') {
         // Parse matching pairs and user matches
         const matchingPairs = question.matchingPairs ? JSON.parse(question.matchingPairs) : []

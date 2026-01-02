@@ -7,11 +7,12 @@ import LoadingSpinner from '@/components/LoadingSpinner'
 interface Question {
   id: string
   questionText: string
-  questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'matching' | 'composite'
+  questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'true_false' | 'matching' | 'composite'
   options?: string[]
   correctOptionIndex?: number
   correctAnswers?: number[]
   correctText?: string
+  correctAnswer?: boolean
   sampleAnswer?: string
   leftColumn?: string[]
   rightColumn?: string[]
@@ -36,11 +37,12 @@ interface Results {
   results: Array<{
     questionId: string
     questionText: string
-    questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'matching' | 'composite'
+    questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'true_false' | 'matching' | 'composite'
     options?: string[]
     correctOptionIndex?: number
     correctAnswers?: number[]
     correctText?: string
+    correctAnswer?: boolean
     sampleAnswer?: string
     leftColumn?: string[]
     rightColumn?: string[]
@@ -51,7 +53,7 @@ interface Results {
     isFillCorrect?: boolean
     fillInPrompt?: string
     fillInCorrectText?: string
-    userAnswer?: number | null | string
+    userAnswer?: number | null | string | boolean
     userAnswers?: number[]
     isCorrect: boolean
   }>
@@ -366,6 +368,25 @@ export default function TestPage() {
                     </div>
                   )}
 
+                  {result.questionType === 'true_false' && (
+                    <div className="true-false-results">
+                      <div className="answer-comparison">
+                        <div className="answer-row">
+                          <span className="answer-label">Your Answer:</span>
+                          <span className={`answer-text ${result.isCorrect ? 'correct' : 'incorrect'}`}>
+                            {result.userAnswer === true ? 'True' : result.userAnswer === false ? 'False' : '(No answer provided)'}
+                          </span>
+                        </div>
+                        <div className="answer-row">
+                          <span className="answer-label">Correct Answer:</span>
+                          <span className="answer-text correct">
+                            {result.correctAnswer === true ? 'True' : 'False'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {result.questionType === 'matching' && result.leftColumn && result.rightColumn && (
                     <div className="matching-results">
                       <div className="matching-container">
@@ -483,6 +504,7 @@ export default function TestPage() {
                         {question.questionType === 'multiple_answer' && 'Multiple Answers'}
                         {question.questionType === 'fill_blank' && 'Fill in the Blank'}
                         {question.questionType === 'descriptive' && 'Descriptive'}
+                        {question.questionType === 'true_false' && 'True/False'}
                         {question.questionType === 'matching' && 'Matching'}
                         {question.questionType === 'composite' && 'Composite'}
                       </span>
@@ -578,6 +600,41 @@ export default function TestPage() {
                     <p className="descriptive-hint">
                       Please provide a detailed answer to this question.
                     </p>
+                  </div>
+                )}
+
+                {question.questionType === 'true_false' && (
+                  <div className="true-false-input">
+                    <div className="options-group">
+                      <label
+                        className={`option-label ${answers[question.id] === 'true' ? 'selected' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name={question.id}
+                          value="true"
+                          checked={answers[question.id] === 'true'}
+                          onChange={() => handleAnswerChange(question.id, 'true')}
+                          className="radio-input"
+                        />
+                        <span className="option-letter">✓</span>
+                        <span className="option-text">True</span>
+                      </label>
+                      <label
+                        className={`option-label ${answers[question.id] === 'false' ? 'selected' : ''}`}
+                      >
+                        <input
+                          type="radio"
+                          name={question.id}
+                          value="false"
+                          checked={answers[question.id] === 'false'}
+                          onChange={() => handleAnswerChange(question.id, 'false')}
+                          className="radio-input"
+                        />
+                        <span className="option-letter">✗</span>
+                        <span className="option-text">False</span>
+                      </label>
+                    </div>
                   </div>
                 )}
 

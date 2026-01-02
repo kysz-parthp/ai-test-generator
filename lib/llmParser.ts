@@ -37,6 +37,14 @@ const DescriptiveQuestionSchema = z.object({
   answerProvided: z.boolean().optional(),
 })
 
+// Schema for true/false questions
+const TrueFalseQuestionSchema = z.object({
+  questionType: z.literal('true_false'),
+  questionText: z.string(),
+  correctAnswer: z.boolean().nullable().optional(), // true or false
+  answerProvided: z.boolean().optional(),
+})
+
 // Schema for matching questions (e.g., "Author — Book")
 // correctMatches can be string format from LLM ("1-3, 2-1, 3-2") or array format (after conversion)
 const MatchingQuestionSchema = z.object({
@@ -71,6 +79,7 @@ const QuestionSchema = z.discriminatedUnion('questionType', [
   MultipleAnswerQuestionSchema,
   FillBlankQuestionSchema,
   DescriptiveQuestionSchema,
+  TrueFalseQuestionSchema,
   MatchingQuestionSchema,
   CompositeQuestionSchema,
 ])
@@ -163,6 +172,14 @@ function removeParentheticalOptions(questionText: string): string {
   
   // Pattern 5: (A. text B. text C. text D. text) - letters with periods
   cleaned = cleaned.replace(/\(([A-D]\.\s*[^)]+(\s+[A-D]\.\s*[^)]+){2,})\)/gi, '')
+  
+  // Pattern 6: Remove standalone numbered/lettered lists at the end that duplicate options
+  // This catches cases like "Question text 1) option 2) option 3) option 4) option"
+  // Look for 3+ consecutive numbered items at the end
+  cleaned = cleaned.replace(/(\s+\d+[\.\)]\s+[^\d]+){3,}\s*$/gi, '')
+  
+  // Pattern 7: Remove lettered lists at the end (A) B) C) D) format
+  cleaned = cleaned.replace(/(\s+[A-D][\.\)]\s+[^A-D]+){3,}\s*$/gi, '')
   
   // Clean up any double spaces, trailing/leading parentheses, commas, or periods
   cleaned = cleaned.replace(/\s+/g, ' ').trim()
@@ -277,7 +294,7 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 1. ANSWER SOURCE OF TRUTH (MANDATORY)
 ═══════════════════════════════════════════════════════════════
 
-* Every question includes a clearly defined correct answer in the document (e.g., "Answer: ...", "Correct Answer: ...", "Key: ...", "Correct: ...").
+* Every question includes a clearly defined correct answer in the document (e.g., "Answer: ...", "Correct Answer: ...", "Key: ...", "Correct: ...", "Верно" / "Неверно" for true/false).
 
 * You MUST ONLY extract and use this provided answer.
 
@@ -323,7 +340,17 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 
 * The generated question must be a CONTINUOUS, COMPLETE RECONSTRUCTION of the original text.
 
-* For "questionText", include the FULL instruction/question text, BUT remove any parenthetical option lists (e.g., "(1) option A 2) option B 3) option C 4) option D") from the questionText since these will be displayed separately in the options array. Preserve all other text verbatim.
+* For "questionText", include the FULL instruction/question text, BUT remove any parenthetical option lists or trailing option lists (e.g., "(1) option A 2) option B 3) option C 4) option D" or "1) option A 2) option B 3) option C 4) option D") from the questionText since these will be displayed separately in the options array. This prevents duplication. Preserve all other text verbatim.
+
+* **CRITICAL**: If the question text contains condition items (e.g., "А) statement 1 Б) statement 2") that are ALSO listed as answer choices, you MUST remove them from the questionText to avoid duplication. Only include them in the options array.
+
+* **CRITICAL FOR FILL-IN-THE-BLANK QUESTIONS**: 
+  - Include the COMPLETE instruction text
+  - Include the ENTIRE passage/text with all blanks (e.g., ___________(А), ___________(Б), etc.)
+  - Include the FULL list of terms/options to choose from (e.g., "ПЕРЕЧЕНЬ ТЕРМИНОВ:")
+  - Include any tables or answer formats
+  - DO NOT truncate or summarize any part of the fill-in-blank structure
+  - The questionText must contain everything a student needs to answer the question
 
 ═══════════════════════════════════════════════════════════════
 4. ANSWER OPTION LABEL CONVERSION (REQUIRED)
@@ -355,7 +382,19 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 * Example: If left column item 1 matches right column item 3, left item 2 matches right item 1, etc., the format is "1-3, 2-1, 3-2".
 
 ═══════════════════════════════════════════════════════════════
-6. OUTPUT INTEGRITY RULES
+6. TRUE/FALSE QUESTION HANDLING
+═══════════════════════════════════════════════════════════════
+
+* Automatically recognize true/false questions (questions with only two possible answers: true or false, yes or no, верно or неверно).
+
+* Use questionType "true_false" for these questions.
+
+* Set "correctAnswer" to true or false based on the provided answer.
+
+* Common indicators: "Верно/Неверно", "True/False", "Yes/No", "Да/Нет"
+
+═══════════════════════════════════════════════════════════════
+7. OUTPUT INTEGRITY RULES
 ═══════════════════════════════════════════════════════════════
 
 * Output must be:
@@ -363,6 +402,7 @@ You must strictly obey ALL rules below. Any violation is considered an error.
   - Fully deterministic and reproducible
   - Free from hallucination
   - Free from truncation or rewording
+  - Free from duplication (options should NOT appear in both questionText and options array)
 
 * If any rule cannot be satisfied, fail explicitly by adding the question to "invalidQuestions" rather than generating incorrect output.
 
@@ -374,8 +414,8 @@ Return a JSON object with this structure:
 {
   "questions": [
     {
-      "questionType": "multiple_choice" | "multiple_answer" | "fill_blank" | "descriptive" | "matching" | "composite",
-      "questionText": "...",  // FULL, COMPLETE question text verbatim (no truncation)
+      "questionType": "multiple_choice" | "multiple_answer" | "fill_blank" | "descriptive" | "true_false" | "matching" | "composite",
+      "questionText": "...",  // FULL, COMPLETE question text verbatim (no truncation, no duplication of options)
       "answerProvided": true | false,  // true if explicit answer found in document
       
       // For multiple_choice:
@@ -387,10 +427,15 @@ Return a JSON object with this structure:
       "correctAnswers": [0, 2],  // Array of 0-based indices, null if answer not provided
       
       // For fill_blank:
+      // questionText must include: instruction + full passage with blanks + list of terms
+      // Example: "Вставьте в текст... PASSAGE WITH BLANKS... ПЕРЕЧЕНЬ ТЕРМИНОВ: 1) term1 2) term2..."
       "correctText": "answer",  // null if answer not provided
       
       // For descriptive:
       "sampleAnswer": "model answer text"  // null if not provided
+      
+      // For true_false:
+      "correctAnswer": true | false,  // true or false, null if not provided
       
       // For matching:
       "leftColumn": ["Item 1", "Item 2", ...],  // Left column items
@@ -414,13 +459,16 @@ Return a JSON object with this structure:
 }
 
 CRITICAL INSTRUCTIONS:
-- Extract answers ONLY from explicit markers like "Answer:", "Correct Answer:", "Key:", "Correct:"
+- Extract answers ONLY from explicit markers like "Answer:", "Correct Answer:", "Key:", "Correct:", "Верно", "Неверно"
 - If no answer is found, add to "invalidQuestions" array
 - Preserve ENTIRE question text verbatim - no truncation, no summarization
-- **IMPORTANT**: Remove parenthetical option lists from questionText (e.g., "(1) option A 2) option B 3) option C 4) option D") since options are displayed separately. Keep all other question text intact.
+- **IMPORTANT**: Remove parenthetical option lists AND trailing option lists from questionText (e.g., "(1) option A 2) option B 3) option C 4) option D" or "1) option A 2) option B") since options are displayed separately. Keep all other question text intact.
+- **CRITICAL**: If condition items appear BOTH in the question text AND as answer choices, remove them from questionText to avoid duplication. Only include them in the options array.
+- **CRITICAL FOR FILL-IN-THE-BLANK**: Include the COMPLETE instruction, the ENTIRE passage with blanks, and the FULL list of terms/options. DO NOT truncate any part of fill-in-blank questions.
 - Remove label prefixes (A), B), etc.) from option text in the options array
 - Convert answer letters to 0-based indices (A=0, B=1, C=2, D=3)
 - For matching questions, use string format "1-3, 2-1" for correctMatches
+- For true/false questions, use questionType "true_false" and set correctAnswer to true or false
 - Treat all related text blocks as a single task condition
 - Do NOT infer or guess answers - only extract what is explicitly provided
 
@@ -436,12 +484,13 @@ ${text}`
           content:
             'You are an AI engine embedded in a test-generation system. Your task is to parse test documents with ABSOLUTE FIDELITY.\n\n' +
             'CRITICAL RULES:\n' +
-            '1. ANSWER SOURCE OF TRUTH: Only extract answers explicitly provided in the document (e.g., "Answer:", "Correct Answer:", "Key:"). NEVER infer, guess, or generate answers. If answer is missing, add question to "invalidQuestions" array.\n' +
+            '1. ANSWER SOURCE OF TRUTH: Only extract answers explicitly provided in the document (e.g., "Answer:", "Correct Answer:", "Key:", "Верно", "Неверно"). NEVER infer, guess, or generate answers. If answer is missing, add question to "invalidQuestions" array.\n' +
             '2. FULL TASK COMPREHENSION: Treat ALL related text blocks as a single task condition, even if separated by line breaks or in different sections.\n' +
-            '3. PRESERVE FULL QUESTION TEXT: Extract ENTIRE question text verbatim - NO truncation, NO summarization, NO paraphrasing.\n' +
+            '3. PRESERVE FULL QUESTION TEXT: Extract ENTIRE question text verbatim - NO truncation, NO summarization, NO paraphrasing. CRITICAL: Remove option lists from questionText to avoid duplication (options go in the options array). If condition items appear BOTH in question text AND as answer choices, remove them from questionText. For fill-in-the-blank questions, include the COMPLETE instruction, ENTIRE passage with blanks, and FULL list of terms.\n' +
             '4. ANSWER OPTION LABEL CONVERSION: Remove label prefixes (A), B), etc.) from option text. Convert answer letters to 0-based indices (A=0, B=1, C=2, D=3).\n' +
             '5. MATCHING TASKS: Use string format "1-3, 2-1" for correctMatches (1-based indices).\n' +
-            '6. OUTPUT INTEGRITY: If any rule cannot be satisfied, fail explicitly by adding to "invalidQuestions" rather than generating incorrect output.\n\n' +
+            '6. TRUE/FALSE QUESTIONS: Use questionType "true_false" for true/false questions. Set correctAnswer to true or false.\n' +
+            '7. OUTPUT INTEGRITY: If any rule cannot be satisfied, fail explicitly by adding to "invalidQuestions" rather than generating incorrect output. NO DUPLICATION of options in questionText and options array.\n\n' +
             'Return valid JSON only. Do not include any text before or after the JSON object.',
         },
         {
@@ -451,7 +500,7 @@ ${text}`
       ],
       temperature: 0.1,
       ...(provider !== 'groq' ? { response_format: { type: 'json_object' } } : {}),
-      max_tokens: 4096,
+      max_tokens: 16000,
     })
 
     const responseText = completion.choices[0]?.message?.content

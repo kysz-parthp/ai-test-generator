@@ -228,6 +228,9 @@ export default async function handler(
               if ('sampleAnswer' in q && q.sampleAnswer) {
                 baseData.correctText = q.sampleAnswer // Reuse correctText field for sample answer
               }
+            } else if (q.questionType === 'true_false') {
+              // For true/false questions, store the correct answer
+              baseData.correctAnswer = 'correctAnswer' in q ? q.correctAnswer : null
             } else if (q.questionType === 'matching') {
               // For matching questions, store left and right columns
               const matchingPairs = q.leftColumn.map((left, idx) => ({

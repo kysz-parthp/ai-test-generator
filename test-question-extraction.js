@@ -170,14 +170,53 @@ async function testQuestionExtraction() {
       }
       
       if (q.questionType === 'fill_blank') {
-        console.log(`   Fill in the blank question`);
+        console.log(`   Fill in the blank question (${q.questionText.length} chars)`);
+        // Check if fill-in-blank is complete
+        if (q.questionText.includes('ПЕРЕЧЕНЬ ТЕРМИНОВ') || q.questionText.includes('Перечень терминов')) {
+          console.log(`   ✅ Includes term list`);
+        } else {
+          console.log(`   ⚠️  Missing term list - may be truncated!`);
+        }
       }
     });
     
     console.log('\n' + '='.repeat(60));
-    console.log('\n✅ All tests passed! The question extraction is working correctly.');
+    
+    // Validate fill-in-blank questions specifically
+    const fillBlankQuestions = questions.filter(q => q.questionType === 'fill_blank');
+    console.log(`\n🔍 Fill-in-Blank Validation:`);
+    console.log(`   Found ${fillBlankQuestions.length} fill-in-blank question(s)`);
+    
+    let allFillBlankComplete = true;
+    fillBlankQuestions.forEach((q, idx) => {
+      const hasTermList = q.questionText.includes('ПЕРЕЧЕНЬ ТЕРМИНОВ') || q.questionText.includes('Перечень терминов');
+      const hasBlanks = q.questionText.includes('___________');
+      const hasPassage = q.questionText.length > 200; // Fill-in-blank questions should be long
+      
+      console.log(`\n   Question ${idx + 1}:`);
+      console.log(`     Length: ${q.questionText.length} characters`);
+      console.log(`     Has blanks: ${hasBlanks ? '✅' : '❌'}`);
+      console.log(`     Has term list: ${hasTermList ? '✅' : '❌'}`);
+      console.log(`     Sufficient length: ${hasPassage ? '✅' : '❌'}`);
+      
+      if (!hasTermList || !hasBlanks || !hasPassage) {
+        console.log(`     ⚠️  WARNING: This question may be truncated!`);
+        allFillBlankComplete = false;
+      }
+    });
+    
+    console.log('\n' + '='.repeat(60));
+    if (allFillBlankComplete && fillBlankQuestions.length > 0) {
+      console.log('\n✅ All tests passed! Fill-in-blank questions are complete.');
+    } else if (fillBlankQuestions.length === 0) {
+      console.log('\n⚠️  No fill-in-blank questions found to validate.');
+    } else {
+      console.log('\n⚠️  Some fill-in-blank questions may be truncated!');
+    }
+    
     console.log(`\n📈 Summary:`);
     console.log(`   - Total questions: ${questions.length}`);
+    console.log(`   - Fill-in-blank questions: ${fillBlankQuestions.length}`);
     console.log(`   - Processing time: ${duration}s`);
     console.log(`   - Average time per question: ${(duration / questions.length).toFixed(2)}s`);
     

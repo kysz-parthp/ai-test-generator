@@ -30,6 +30,7 @@ model Question {
   correctOptionIndex Int?
   correctAnswers     String? // JSON array of correct option indices
   correctText        String?
+  correctAnswer      Boolean? // For true/false questions
   imageUrl           String?
   order              Int      @default(0)
   section            String? // Optional section/group name to preserve structure

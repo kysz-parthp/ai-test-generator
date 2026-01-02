@@ -75,6 +75,9 @@ export default async function handler(
           if (q.correctText) {
             baseQuestion.sampleAnswer = q.correctText
           }
+        } else if (q.questionType === 'true_false') {
+          // For true/false questions, return the correct answer
+          baseQuestion.correctAnswer = q.correctAnswer
         } else if (q.questionType === 'matching') {
           // For matching questions, parse matching pairs
           if (q.matchingPairs) {
