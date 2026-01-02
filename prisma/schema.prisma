@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Test {
+  id               String     @id @default(uuid())
+  title            String?
+  createdAt        DateTime   @default(now())
+  shareLink        String     @unique
+  originalFileName String?
+  filePath         String? // Path to stored file
+  questions        Question[]
+}
+
+model Question {
+  id                 String   @id @default(uuid())
+  testId             String
+  test               Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  questionText       String
+  questionType       String   @default("multiple_choice")
+  options            String? // JSON array of options
+  correctOptionIndex Int?
+  correctAnswers     String? // JSON array of correct option indices
+  correctText        String?
+  imageUrl           String?
+  order              Int      @default(0)
+  section            String? // Optional section/group name to preserve structure
+  originalNumber     String? // Original question number from document (e.g., "1", "2a", "Q3")
+  matchingPairs      String? // JSON array of {left: string, right: string} for matching questions
+  correctMatches     String? // JSON array of {leftIndex: number, rightIndex: number} for matching questions
+  hasFillInPart      Boolean  @default(false) // True if question has both MCQ and fill-in-the-blank parts
+  fillInPrompt       String? // Additional prompt for fill-in-the-blank part of composite questions
+  createdAt          DateTime @default(now())
+}

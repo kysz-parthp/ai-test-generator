@@ -1,0 +1,44 @@
+Sample Test Questions
+
+Question 1: What is the capital city of France?
+A) London
+B) Berlin
+C) Paris
+D) Madrid
+Correct Answer: C
+
+Question 2: Which planet is closest to the Sun?
+1. Venus
+2. Mercury
+3. Earth
+4. Mars
+Answer: 2
+
+Question 3: What is 2 + 2?
+A) 3
+B) 4
+C) 5
+D) 6
+Key: B
+
+Question 4: Who wrote "Romeo and Juliet"?
+A) Charles Dickens
+B) William Shakespeare
+C) Mark Twain
+D) Jane Austen
+Correct: B
+
+Question 5: What is the largest ocean on Earth?
+A) Atlantic Ocean
+B) Indian Ocean
+C) Arctic Ocean
+D) Pacific Ocean
+Answer: D
+
+
+
+
+
+
+
+
