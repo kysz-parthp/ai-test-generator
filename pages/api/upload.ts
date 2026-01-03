@@ -1,4 +1,5 @@
-import type { NextApiRequest, NextApiResponse } from 'next'
+import type { NextApiResponse } from 'next'
+import { requireTeacher, AuthenticatedRequest } from '@/lib/auth/authMiddleware'
 import { prisma } from '@/lib/db'
 import { generateShareLink } from '@/lib/utils'
 import { extractTextFromFile } from '@/lib/fileParser'
@@ -14,7 +15,7 @@ export const config = {
   },
 }
 
-async function parseFormData(req: NextApiRequest): Promise<{ file: File; formidableFile: FormidableFile }> {
+async function parseFormData(req: AuthenticatedRequest): Promise<{ file: File; formidableFile: FormidableFile }> {
   return new Promise((resolve, reject) => {
     const form = formidable({
       maxFileSize: 10 * 1024 * 1024, // 10MB
@@ -56,8 +57,8 @@ async function parseFormData(req: NextApiRequest): Promise<{ file: File; formida
   })
 }
 
-export default async function handler(
-  req: NextApiRequest,
+async function handler(
+  req: AuthenticatedRequest,
   res: NextApiResponse
 ) {
   if (req.method !== 'POST') {
@@ -65,6 +66,15 @@ export default async function handler(
   }
 
   try {
+    // Get teacher profile
+    const teacherProfile = await prisma.teacherProfile.findUnique({
+      where: { userId: req.user.id }
+    })
+    
+    if (!teacherProfile) {
+      return res.status(404).json({ error: 'Teacher profile not found' })
+    }
+
     // Parse the multipart form data
     const { file, formidableFile } = await parseFormData(req)
     
@@ -198,6 +208,9 @@ export default async function handler(
         title: file.name.replace(/\.[^/.]+$/, ''),
         originalFileName: formidableFile.originalFilename || file.name,
         filePath: fileName, // Store relative path
+        teacherId: teacherProfile.id, // Link to teacher
+        status: 'PUBLISHED', // Auto-publish for now
+        visibility: 'PUBLIC', // Keep existing behavior
         questions: {
           create: questions.map((q, index) => {
             const baseData: any = {
@@ -286,3 +299,5 @@ export default async function handler(
     })
   }
 }
+
+export default requireTeacher(handler)
