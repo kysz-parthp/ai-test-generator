@@ -10,14 +10,170 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// USER MANAGEMENT
+// ============================================
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model User {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  emailVerified DateTime?
+  passwordHash  String
+  role          UserRole      @default(STUDENT)
+  status        AccountStatus @default(ACTIVE)
+  
+  // Profile Information
+  firstName     String
+  lastName      String
+  
+  // Metadata
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  teacherProfile TeacherProfile?
+  studentProfile StudentProfile?
+  sessions       Session[]
+  
+  @@index([email])
+  @@index([role])
+}
+
+model TeacherProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Teacher-specific fields
+  department String?
+  subject    String?
+  
+  // Relations
+  tests     Test[]
+  classes   Class[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StudentProfile {
+  id           String        @id @default(uuid())
+  userId       String        @unique
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Student-specific fields
+  studentId    String?
+  grade        String?
+  
+  // Relations
+  enrollments  Enrollment[]
+  testAttempts TestAttempt[]
+  
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  
+  @@index([studentId])
+}
+
+// ============================================
+// CLASS MANAGEMENT
+// ============================================
+
+model Class {
+  id          String           @id @default(uuid())
+  name        String
+  description String?
+  code        String           @unique
+  
+  // Teacher
+  teacherId   String
+  teacher     TeacherProfile   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  // Relations
+  enrollments Enrollment[]
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  @@index([teacherId])
+  @@index([code])
+}
+
+model Enrollment {
+  id         String         @id @default(uuid())
+  
+  studentId  String
+  student    StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  classId    String
+  class      Class          @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  enrolledAt DateTime       @default(now())
+  
+  @@unique([studentId, classId])
+  @@index([studentId])
+  @@index([classId])
+}
+
+// ============================================
+// SESSION MANAGEMENT
+// ============================================
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  token     String   @unique
+  expiresAt DateTime
+  
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+// ============================================
+// EXISTING TEST MODELS (UPDATED)
+// ============================================
+
 model Test {
-  id               String     @id @default(uuid())
+  id               String          @id @default(uuid())
   title            String?
-  createdAt        DateTime   @default(now())
-  shareLink        String     @unique
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  shareLink        String          @unique
   originalFileName String?
-  filePath         String? // Path to stored file
+  filePath         String?
+  
+  // Owner (NEW)
+  teacherId        String?
+  teacher          TeacherProfile? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  // Test Settings (NEW)
+  status           String          @default("DRAFT")
+  visibility       String          @default("PRIVATE")
+  
+  // Relations
   questions        Question[]
+  testAttempts     TestAttempt[]
+  
+  @@index([teacherId])
+  @@index([shareLink])
 }
 
 model Question {
@@ -40,4 +196,60 @@ model Question {
   hasFillInPart      Boolean  @default(false) // True if question has both MCQ and fill-in-the-blank parts
   fillInPrompt       String? // Additional prompt for fill-in-the-blank part of composite questions
   createdAt          DateTime @default(now())
+  
+  // Relations (NEW)
+  answers            Answer[]
+}
+
+// ============================================
+// TEST ATTEMPTS & RESULTS
+// ============================================
+
+model TestAttempt {
+  id            String         @id @default(uuid())
+  
+  testId        String
+  test          Test           @relation(fields: [testId], references: [id], onDelete: Cascade)
+  
+  studentId     String
+  student       StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  // Attempt Information
+  attemptNumber Int
+  status        String         @default("IN_PROGRESS")
+  
+  // Timing
+  startedAt     DateTime       @default(now())
+  submittedAt   DateTime?
+  
+  // Scoring
+  score         Float?
+  
+  // Relations
+  answers       Answer[]
+  
+  @@unique([testId, studentId, attemptNumber])
+  @@index([testId])
+  @@index([studentId])
+  @@index([status])
+}
+
+model Answer {
+  id         String      @id @default(uuid())
+  
+  attemptId  String
+  attempt    TestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  
+  questionId String
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  // Answer Data
+  answerData String      // JSON string
+  isCorrect  Boolean?
+  
+  createdAt  DateTime    @default(now())
+  
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@index([questionId])
 }
