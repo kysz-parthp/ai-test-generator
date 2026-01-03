@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@prisma/client": "^5.7.1",
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.3",
     "formidable": "^3.5.1",
     "mammoth": "^1.6.0",
@@ -28,7 +30,8 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "uuid": "^9.0.1",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@types/formidable": "^3.4.5",
