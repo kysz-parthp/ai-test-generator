@@ -1,9 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { useRouter } from 'next/router'
 import Head from 'next/head'
 import Link from 'next/link'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import ProgressBar from '@/components/ProgressBar'
 import { ToastContainer } from '@/components/Toast'
+import { useAuthStore } from '@/store/authStore'
 
 interface Toast {
   id: string
@@ -12,6 +14,8 @@ interface Toast {
 }
 
 export default function Home() {
+  const router = useRouter()
+  const { isAuthenticated } = useAuthStore()
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -25,6 +29,22 @@ export default function Home() {
     originalFileName: string
     questionCount?: number
   } | null>(null)
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/auth/login')
+    }
+  }, [isAuthenticated, router])
+
+  // Show loading while redirecting
+  if (!isAuthenticated) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <LoadingSpinner size="large" />
+      </div>
+    )
+  }
 
   const addToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
     const id = Math.random().toString(36).substr(2, 9)
