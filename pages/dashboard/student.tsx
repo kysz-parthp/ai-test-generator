@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import Head from 'next/head'
+import Link from 'next/link'
 import { useAuthStore } from '@/store/authStore'
 
 interface Enrollment {
@@ -23,10 +24,38 @@ interface Enrollment {
   }
 }
 
+interface Assignment {
+  id: string
+  assignedAt: string
+  dueDate: string | null
+  test: {
+    id: string
+    title: string | null
+    shareLink: string
+    _count: {
+      questions: number
+    }
+  }
+  class: {
+    name: string
+    teacher: {
+      user: {
+        firstName: string
+        lastName: string
+      }
+    }
+  }
+  latestAttempt: {
+    status: string
+    score: number | null
+  } | null
+}
+
 export default function StudentDashboard() {
   const router = useRouter()
   const { user, isAuthenticated, logout } = useAuthStore()
   const [enrollments, setEnrollments] = useState<Enrollment[]>([])
+  const [assignments, setAssignments] = useState<Assignment[]>([])
   const [loading, setLoading] = useState(true)
   const [joinCode, setJoinCode] = useState('')
   const [joining, setJoining] = useState(false)
@@ -39,6 +68,7 @@ export default function StudentDashboard() {
       router.push('/dashboard/teacher')
     } else {
       fetchEnrollments()
+      fetchAssignments()
     }
   }, [isAuthenticated, user, router])
 
@@ -51,6 +81,18 @@ export default function StudentDashboard() {
       }
     } catch (error) {
       console.error('Failed to fetch enrollments:', error)
+    }
+  }
+
+  const fetchAssignments = async () => {
+    try {
+      const response = await fetch('/api/student/assigned-tests')
+      const data = await response.json()
+      if (response.ok) {
+        setAssignments(data.assignments)
+      }
+    } catch (error) {
+      console.error('Failed to fetch assignments:', error)
     } finally {
       setLoading(false)
     }
@@ -145,15 +187,94 @@ export default function StudentDashboard() {
             
             <div style={{ background: 'white', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>📚</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1a202c' }}>0</div>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1a202c' }}>{assignments.length}</div>
               <div style={{ color: '#718096', fontSize: '0.875rem' }}>Assigned Tests</div>
             </div>
             
             <div style={{ background: 'white', padding: '1.5rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
               <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>✅</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1a202c' }}>0</div>
+              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#1a202c' }}>
+                {assignments.filter(a => a.latestAttempt?.status === 'COMPLETED').length}
+              </div>
               <div style={{ color: '#718096', fontSize: '0.875rem' }}>Completed</div>
             </div>
+          </div>
+
+          {/* Assigned Tests */}
+          <div style={{ background: 'white', padding: '2rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '2rem' }}>
+            <h2 style={{ fontSize: '1.25rem', color: '#1a202c', marginBottom: '1rem' }}>📝 Assigned Tests</h2>
+            
+            {loading ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>Loading...</div>
+            ) : assignments.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>
+                <p>No tests assigned yet. Your teacher will assign tests to your classes.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                {assignments.map((assignment) => (
+                  <div 
+                    key={assignment.id} 
+                    style={{ 
+                      padding: '1.5rem', 
+                      border: '2px solid #e2e8f0', 
+                      borderRadius: '0.5rem',
+                      background: assignment.latestAttempt?.status === 'COMPLETED' ? '#f0fff4' : 'white'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
+                      <div>
+                        <h3 style={{ margin: '0 0 0.5rem 0', color: '#1a202c', fontSize: '1.125rem' }}>
+                          {assignment.test.title || 'Untitled Test'}
+                        </h3>
+                        <div style={{ display: 'flex', gap: '1rem', fontSize: '0.875rem', color: '#718096', flexWrap: 'wrap' }}>
+                          <span>📚 {assignment.class.name}</span>
+                          <span>👨‍🏫 {assignment.class.teacher.user.firstName} {assignment.class.teacher.user.lastName}</span>
+                          <span>📝 {assignment.test._count.questions} questions</span>
+                          {assignment.dueDate && (
+                            <span>📅 Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        {assignment.latestAttempt?.status === 'COMPLETED' ? (
+                          <>
+                            <div style={{ 
+                              padding: '0.5rem 1rem', 
+                              background: '#48bb78',
+                              color: 'white',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem',
+                              fontWeight: 600
+                            }}>
+                              ✅ Completed
+                              {assignment.latestAttempt.score !== null && (
+                                <span> • {Math.round(assignment.latestAttempt.score)}%</span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <Link
+                            href={`/test/${assignment.test.shareLink}`}
+                            style={{ 
+                              padding: '0.5rem 1.5rem', 
+                              background: '#667eea', 
+                              color: 'white', 
+                              textDecoration: 'none', 
+                              borderRadius: '0.375rem',
+                              fontSize: '0.875rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            Start Test
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Join Class */}

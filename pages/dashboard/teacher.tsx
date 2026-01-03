@@ -37,6 +37,10 @@ export default function TeacherDashboard() {
   const [newClassName, setNewClassName] = useState('')
   const [newClassDescription, setNewClassDescription] = useState('')
   const [creating, setCreating] = useState(false)
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [selectedTest, setSelectedTest] = useState<Test | null>(null)
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [assigning, setAssigning] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -106,6 +110,38 @@ export default function TeacherDashboard() {
       alert('Failed to create class')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleAssignTest = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedTest || !selectedClassId) return
+
+    setAssigning(true)
+    try {
+      const response = await fetch('/api/teacher/assign-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          testId: selectedTest.id,
+          classId: selectedClassId
+        })
+      })
+
+      const data = await response.json()
+      if (response.ok) {
+        alert(data.message)
+        setShowAssignModal(false)
+        setSelectedTest(null)
+        setSelectedClassId('')
+      } else {
+        alert(data.error || 'Failed to assign test')
+      }
+    } catch (error) {
+      console.error('Failed to assign test:', error)
+      alert('Failed to assign test')
+    } finally {
+      setAssigning(false)
     }
   }
 
@@ -315,6 +351,104 @@ export default function TeacherDashboard() {
             </div>
           )}
 
+          {/* Assign Test Modal */}
+          {showAssignModal && selectedTest && (
+            <div style={{ 
+              position: 'fixed', 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              background: 'rgba(0,0,0,0.5)', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              zIndex: 1000
+            }}>
+              <div style={{ background: 'white', padding: '2rem', borderRadius: '0.5rem', maxWidth: '500px', width: '90%' }}>
+                <h2 style={{ marginTop: 0, marginBottom: '1rem', color: '#1a202c' }}>Assign Test to Class</h2>
+                <div style={{ 
+                  padding: '1rem', 
+                  background: '#f7fafc', 
+                  borderRadius: '0.375rem', 
+                  marginBottom: '1.5rem',
+                  borderLeft: '4px solid #667eea'
+                }}>
+                  <div style={{ fontSize: '0.875rem', color: '#718096', marginBottom: '0.25rem' }}>Selected Test</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 600, color: '#1a202c' }}>
+                    {selectedTest.title || 'Untitled Test'}
+                  </div>
+                  <div style={{ fontSize: '0.875rem', color: '#718096', marginTop: '0.25rem' }}>
+                    {selectedTest._count.questions} questions
+                  </div>
+                </div>
+                <form onSubmit={handleAssignTest}>
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', color: '#4a5568', fontWeight: 600 }}>
+                      Select Class *
+                    </label>
+                    <select
+                      value={selectedClassId}
+                      onChange={(e) => setSelectedClassId(e.target.value)}
+                      required
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.75rem', 
+                        border: '1px solid #e2e8f0', 
+                        borderRadius: '0.375rem',
+                        fontSize: '1rem'
+                      }}
+                    >
+                      <option value="">-- Choose a class --</option>
+                      {classes.map((cls) => (
+                        <option key={cls.id} value={cls.id}>
+                          {cls.name} ({cls._count.enrollments} students)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAssignModal(false)
+                        setSelectedTest(null)
+                        setSelectedClassId('')
+                      }}
+                      disabled={assigning}
+                      style={{ 
+                        padding: '0.75rem 1.5rem', 
+                        background: '#e2e8f0', 
+                        color: '#4a5568', 
+                        border: 'none',
+                        borderRadius: '0.375rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={assigning || !selectedClassId}
+                      style={{ 
+                        padding: '0.75rem 1.5rem', 
+                        background: assigning || !selectedClassId ? '#a0aec0' : '#ed8936', 
+                        color: 'white', 
+                        border: 'none',
+                        borderRadius: '0.375rem',
+                        fontWeight: 600,
+                        cursor: assigning || !selectedClassId ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      {assigning ? 'Assigning...' : 'Assign Test'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* My Classes */}
           <div style={{ background: 'white', padding: '2rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '2rem' }}>
             <h2 style={{ fontSize: '1.25rem', color: '#1a202c', marginBottom: '1rem' }}>🏫 My Classes</h2>
@@ -460,6 +594,26 @@ export default function TeacherDashboard() {
                         }}
                       >
                         Copy Link
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedTest(test)
+                          setShowAssignModal(true)
+                        }}
+                        disabled={classes.length === 0}
+                        style={{ 
+                          padding: '0.5rem 1rem', 
+                          background: classes.length === 0 ? '#a0aec0' : '#ed8936', 
+                          color: 'white', 
+                          border: 'none',
+                          borderRadius: '0.375rem',
+                          fontSize: '0.875rem',
+                          fontWeight: 600,
+                          cursor: classes.length === 0 ? 'not-allowed' : 'pointer'
+                        }}
+                        title={classes.length === 0 ? 'Create a class first' : 'Assign to class'}
+                      >
+                        Assign
                       </button>
                     </div>
                   </div>

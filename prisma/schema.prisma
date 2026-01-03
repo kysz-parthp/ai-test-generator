@@ -104,10 +104,11 @@ model Class {
   
   // Relations
   enrollments Enrollment[]
+  assignments TestAssignment[]
   
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
-  
+
   @@index([teacherId])
   @@index([code])
 }
@@ -152,25 +153,26 @@ model Session {
 // ============================================
 
 model Test {
-  id               String          @id @default(uuid())
+  id               String            @id @default(uuid())
   title            String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  shareLink        String          @unique
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  shareLink        String            @unique
   originalFileName String?
   filePath         String?
   
   // Owner (NEW)
   teacherId        String?
-  teacher          TeacherProfile? @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacher          TeacherProfile?   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   
   // Test Settings (NEW)
-  status           String          @default("DRAFT")
-  visibility       String          @default("PRIVATE")
+  status           String            @default("DRAFT")
+  visibility       String            @default("PRIVATE")
   
   // Relations
   questions        Question[]
   testAttempts     TestAttempt[]
+  assignments      TestAssignment[]
   
   @@index([teacherId])
   @@index([shareLink])
@@ -252,4 +254,24 @@ model Answer {
   @@unique([attemptId, questionId])
   @@index([attemptId])
   @@index([questionId])
+}
+
+model TestAssignment {
+  id          String   @id @default(uuid())
+  
+  testId      String
+  test        Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  
+  classId     String
+  class       Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  // Assignment Settings
+  dueDate     DateTime?
+  isActive    Boolean  @default(true)
+  
+  assignedAt  DateTime @default(now())
+  
+  @@unique([testId, classId])
+  @@index([testId])
+  @@index([classId])
 }
