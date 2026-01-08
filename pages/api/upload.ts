@@ -262,6 +262,12 @@ async function handler(
               baseData.hasFillInPart = true
               baseData.fillInPrompt = q.fillInPrompt || null
               baseData.correctText = q.fillInCorrectText || null
+            } else if (q.questionType === 'sequencing') {
+              // For sequencing questions, store items in options field and correct order
+              baseData.options = JSON.stringify(q.items || [])
+              if (q.correctOrder && Array.isArray(q.correctOrder)) {
+                baseData.correctOrder = JSON.stringify(q.correctOrder)
+              }
             }
             
             // Handle imageUrl if present

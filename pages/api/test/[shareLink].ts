@@ -95,6 +95,12 @@ export default async function handler(
           baseQuestion.hasFillInPart = q.hasFillInPart || false
           baseQuestion.fillInPrompt = q.fillInPrompt
           baseQuestion.fillInCorrectText = q.correctText
+        } else if (q.questionType === 'sequencing') {
+          // For sequencing questions, options contains items to sequence
+          baseQuestion.items = q.options ? JSON.parse(q.options) : []
+          if (q.correctOrder) {
+            baseQuestion.correctOrder = JSON.parse(q.correctOrder)
+          }
         }
 
         return baseQuestion

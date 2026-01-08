@@ -193,7 +193,7 @@ export default function TeacherDashboard() {
             <h1 style={{ fontSize: '2rem', color: '#1a202c', marginBottom: '0.5rem' }}>
               Welcome back, {user.firstName}! 👋
             </h1>
-            <p style={{ color: '#718096' }}>Here's your teacher dashboard</p>
+            <p style={{ color: '#718096' }}>Here&apos;s your teacher dashboard</p>
           </div>
 
           {/* Stats Cards */}
@@ -457,7 +457,7 @@ export default function TeacherDashboard() {
               <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>Loading...</div>
             ) : classes.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>
-                <p>No classes created yet. Click "Create New Class" to get started!</p>
+                <p>No classes created yet. Click &quot;Create New Class&quot; to get started!</p>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>
@@ -526,7 +526,7 @@ export default function TeacherDashboard() {
               <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>Loading...</div>
             ) : tests.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>
-                <p>No tests created yet. Click "Create New Test" to get started!</p>
+                <p>No tests created yet. Click &quot;Create New Test&quot; to get started!</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -627,7 +627,7 @@ export default function TeacherDashboard() {
             <div style={{ background: 'white', padding: '2rem', borderRadius: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
               <h2 style={{ fontSize: '1.25rem', color: '#1a202c', marginBottom: '1rem' }}>🚀 Getting Started</h2>
               <ol style={{ color: '#4a5568', lineHeight: '1.8' }}>
-                <li>Click "Create New Test" to upload a test file (PDF, DOCX, or TXT)</li>
+                <li>Click &quot;Create New Test&quot; to upload a test file (PDF, DOCX, or TXT)</li>
                 <li>AI will automatically extract questions and answers</li>
                 <li>Get a shareable link to send to your students</li>
                 <li>Students take the test and see results immediately</li>

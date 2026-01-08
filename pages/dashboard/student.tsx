@@ -174,7 +174,7 @@ export default function StudentDashboard() {
             <h1 style={{ fontSize: '2rem', color: '#1a202c', marginBottom: '0.5rem' }}>
               Welcome back, {user.firstName}! 👋
             </h1>
-            <p style={{ color: '#718096' }}>Here's your student dashboard</p>
+            <p style={{ color: '#718096' }}>Here&apos;s your student dashboard</p>
           </div>
 
           {/* Stats Cards */}
@@ -323,7 +323,7 @@ export default function StudentDashboard() {
               <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>Loading...</div>
             ) : enrollments.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem', color: '#718096' }}>
-                <p>You haven't joined any classes yet. Enter a join code above to get started!</p>
+                <p>You haven&apos;t joined any classes yet. Enter a join code above to get started!</p>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1rem' }}>

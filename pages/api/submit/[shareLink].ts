@@ -145,6 +145,42 @@ export default async function handler(
         resultData.fillInCorrectText = question.correctText
         resultData.userFillAnswer = compositeAnswer.fill || ''
         resultData.isFillCorrect = fillCorrect
+      } else if (question.questionType === 'sequencing') {
+        // For sequencing questions, user answer is a JSON object mapping item indices to positions
+        const items = question.options ? JSON.parse(question.options) : []
+        const correctOrder = question.correctOrder ? JSON.parse(question.correctOrder) : []
+        const userOrderMap = userAnswer ? JSON.parse(userAnswer) : {}
+        
+        // Convert user's position map to ordered array of item indices
+        // userOrderMap: { 0: 2, 1: 1, 2: 3 } means item 0 is at position 2, item 1 at position 1, etc.
+        // We need to convert this to [1, 0, 2] (item indices in order)
+        const userOrder: number[] = []
+        const positionToItem: { [key: number]: number } = {}
+        
+        // Build map of position -> item index
+        Object.keys(userOrderMap).forEach((itemIndexStr) => {
+          const itemIndex = parseInt(itemIndexStr)
+          const position = userOrderMap[itemIndex]
+          if (position !== '' && position !== null && position !== undefined) {
+            positionToItem[position] = itemIndex
+          }
+        })
+        
+        // Build ordered array from positions 1 to N
+        for (let pos = 1; pos <= items.length; pos++) {
+          if (positionToItem[pos] !== undefined) {
+            userOrder.push(positionToItem[pos])
+          }
+        }
+        
+        // Compare user order with correct order
+        isCorrect = correctOrder.length > 0 && 
+          userOrder.length === correctOrder.length &&
+          userOrder.every((itemIndex, pos) => itemIndex === correctOrder[pos])
+
+        resultData.items = items
+        resultData.correctOrder = correctOrder
+        resultData.userOrder = userOrder
       }
 
       resultData.isCorrect = isCorrect

@@ -111,7 +111,7 @@ export default function LoginPage() {
           
           <div style={{ marginTop: '2rem', textAlign: 'center', color: '#718096' }}>
             <p>
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href="/auth/register" style={{ color: '#667eea', textDecoration: 'none', fontWeight: 600 }}>
                 Sign up
               </Link>
@@ -122,4 +122,5 @@ export default function LoginPage() {
     </>
   )
 }
+
 

@@ -197,6 +197,7 @@ model Question {
   correctMatches     String? // JSON array of {leftIndex: number, rightIndex: number} for matching questions
   hasFillInPart      Boolean  @default(false) // True if question has both MCQ and fill-in-the-blank parts
   fillInPrompt       String? // Additional prompt for fill-in-the-blank part of composite questions
+  correctOrder       String? // JSON array of 0-based indices representing correct order for sequencing questions
   createdAt          DateTime @default(now())
   
   // Relations (NEW)

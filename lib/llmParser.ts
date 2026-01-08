@@ -73,6 +73,15 @@ const CompositeQuestionSchema = z.object({
   answerProvided: z.boolean().optional(),
 })
 
+// Schema for sequencing/ordering questions
+const SequencingQuestionSchema = z.object({
+  questionType: z.literal('sequencing'),
+  questionText: z.string(), // Instruction text
+  items: z.array(z.string()).min(2), // Items to sequence/order
+  correctOrder: z.array(z.number().int().min(0)).nullable().optional(), // Array of 0-based indices representing correct order
+  answerProvided: z.boolean().optional(),
+})
+
 // Union schema for all question types
 const QuestionSchema = z.discriminatedUnion('questionType', [
   MultipleChoiceQuestionSchema,
@@ -82,6 +91,7 @@ const QuestionSchema = z.discriminatedUnion('questionType', [
   TrueFalseQuestionSchema,
   MatchingQuestionSchema,
   CompositeQuestionSchema,
+  SequencingQuestionSchema,
 ])
 
 const QuestionsResponseSchema = z.object({
@@ -272,6 +282,19 @@ function postProcessQuestions(questions: ParsedQuestion[]): ParsedQuestion[] {
       } as ParsedQuestion
     }
     
+    // Process sequencing questions - ensure items are present
+    if (question.questionType === 'sequencing') {
+      // Ensure items array exists and has at least 2 items
+      if (!question.items || question.items.length < 2) {
+        console.warn('Sequencing question missing items array or has less than 2 items')
+      }
+      
+      return {
+        ...question,
+        questionText: cleanedQuestionText,
+      }
+    }
+    
     // For other question types, just clean the question text
     return {
       ...question,
@@ -394,7 +417,25 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 * Common indicators: "Верно/Неверно", "True/False", "Yes/No", "Да/Нет"
 
 ═══════════════════════════════════════════════════════════════
-7. OUTPUT INTEGRITY RULES
+7. SEQUENCING/ORDERING QUESTION HANDLING
+═══════════════════════════════════════════════════════════════
+
+* Automatically recognize sequencing/ordering tasks (questions that require arranging items in a specific order).
+
+* Use questionType "sequencing" for these questions.
+
+* Extract all items that need to be sequenced into the "items" array.
+
+* For "correctOrder", provide an array of 0-based indices representing the correct sequence.
+  Example: If items are ["First", "Second", "Third"] and correct order is ["Second", "First", "Third"],
+  then correctOrder should be [1, 0, 2] (0-based indices).
+
+* Common indicators: "Arrange in order", "Put in sequence", "Order the following", "Расположите в порядке"
+
+* The items array MUST contain all items that need to be sequenced. Without items, sequencing is impossible.
+
+═══════════════════════════════════════════════════════════════
+8. OUTPUT INTEGRITY RULES
 ═══════════════════════════════════════════════════════════════
 
 * Output must be:
@@ -414,7 +455,7 @@ Return a JSON object with this structure:
 {
   "questions": [
     {
-      "questionType": "multiple_choice" | "multiple_answer" | "fill_blank" | "descriptive" | "true_false" | "matching" | "composite",
+      "questionType": "multiple_choice" | "multiple_answer" | "fill_blank" | "descriptive" | "true_false" | "matching" | "composite" | "sequencing",
       "questionText": "...",  // FULL, COMPLETE question text verbatim (no truncation, no duplication of options)
       "answerProvided": true | false,  // true if explicit answer found in document
       
@@ -447,6 +488,10 @@ Return a JSON object with this structure:
       "correctOptionIndex": 0,  // null if not provided
       "fillInPrompt": "Enter the term:",
       "fillInCorrectText": "answer"  // null if not provided
+      
+      // For sequencing/ordering:
+      "items": ["Item 1", "Item 2", ...],  // Items to sequence (REQUIRED - sequencing needs items)
+      "correctOrder": [1, 0, 2],  // Array of 0-based indices representing correct order, null if not provided
     }
   ],
   "invalidQuestions": [  // Questions that cannot be parsed due to missing/ambiguous answers
@@ -469,6 +514,8 @@ CRITICAL INSTRUCTIONS:
 - Convert answer letters to 0-based indices (A=0, B=1, C=2, D=3)
 - For matching questions, use string format "1-3, 2-1" for correctMatches
 - For true/false questions, use questionType "true_false" and set correctAnswer to true or false
+- For sequencing questions, use questionType "sequencing", extract all items into "items" array, and provide correctOrder as array of 0-based indices
+- **CRITICAL FOR SEQUENCING**: The items array MUST contain all items to sequence. Without items, sequencing is impossible.
 - Treat all related text blocks as a single task condition
 - Do NOT infer or guess answers - only extract what is explicitly provided
 

@@ -15,3 +15,5 @@ echo ""
 echo "Next step: Run the seed script to create test data"
 echo "Command: npm run seed"
 
+
+

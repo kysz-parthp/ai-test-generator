@@ -106,3 +106,5 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
 
 export default requireTeacher(handler)
 
+
+

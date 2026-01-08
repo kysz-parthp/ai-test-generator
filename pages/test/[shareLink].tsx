@@ -7,7 +7,7 @@ import LoadingSpinner from '@/components/LoadingSpinner'
 interface Question {
   id: string
   questionText: string
-  questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'true_false' | 'matching' | 'composite'
+  questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'true_false' | 'matching' | 'composite' | 'sequencing'
   options?: string[]
   correctOptionIndex?: number
   correctAnswers?: number[]
@@ -20,6 +20,8 @@ interface Question {
   hasFillInPart?: boolean
   fillInPrompt?: string
   fillInCorrectText?: string
+  items?: string[] // For sequencing questions
+  correctOrder?: number[] // For sequencing questions
   order: number
   originalNumber?: string
   section?: string
@@ -37,7 +39,7 @@ interface Results {
   results: Array<{
     questionId: string
     questionText: string
-    questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'true_false' | 'matching' | 'composite'
+    questionType: 'multiple_choice' | 'multiple_answer' | 'fill_blank' | 'descriptive' | 'true_false' | 'matching' | 'composite' | 'sequencing'
     options?: string[]
     correctOptionIndex?: number
     correctAnswers?: number[]
@@ -53,6 +55,9 @@ interface Results {
     isFillCorrect?: boolean
     fillInPrompt?: string
     fillInCorrectText?: string
+    items?: string[]
+    correctOrder?: number[]
+    userOrder?: number[]
     userAnswer?: number | null | string | boolean
     userAnswers?: number[]
     isCorrect: boolean
@@ -475,6 +480,39 @@ export default function TestPage() {
                       )}
                     </div>
                   )}
+
+                  {result.questionType === 'sequencing' && result.items && (
+                    <div className="sequencing-results">
+                      <div className="sequencing-comparison">
+                        <div className="sequencing-column">
+                          <h4>Your Order:</h4>
+                          {result.userOrder && result.userOrder.length > 0 ? (
+                            <ol className="sequencing-list">
+                              {result.userOrder.map((itemIndex: number, position: number) => (
+                                <li key={position} className={`sequencing-item ${result.isCorrect ? 'correct' : 'incorrect'}`}>
+                                  {result.items![itemIndex]}
+                                </li>
+                              ))}
+                            </ol>
+                          ) : (
+                            <p className="no-answer">(No answer provided)</p>
+                          )}
+                        </div>
+                        {result.correctOrder && (
+                          <div className="sequencing-column">
+                            <h4>Correct Order:</h4>
+                            <ol className="sequencing-list correct">
+                              {result.correctOrder.map((itemIndex: number, position: number) => (
+                                <li key={position} className="sequencing-item correct">
+                                  {result.items![itemIndex]}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -507,6 +545,7 @@ export default function TestPage() {
                         {question.questionType === 'true_false' && 'True/False'}
                         {question.questionType === 'matching' && 'Matching'}
                         {question.questionType === 'composite' && 'Composite'}
+                        {question.questionType === 'sequencing' && 'Sequencing/Ordering'}
                       </span>
                     </div>
                     {question.imageUrl && (
@@ -723,6 +762,42 @@ export default function TestPage() {
                         />
                       </div>
                     )}
+                  </div>
+                )}
+
+                {question.questionType === 'sequencing' && question.items && (
+                  <div className="sequencing-input">
+                    <p className="sequencing-hint">Arrange the items in the correct order by entering numbers (1, 2, 3, etc.):</p>
+                    <div className="sequencing-items">
+                      {question.items.map((item, itemIndex) => {
+                        const currentAnswer = answers[question.id] ? JSON.parse(answers[question.id]) : {}
+                        const position = currentAnswer[itemIndex] !== undefined ? currentAnswer[itemIndex] : ''
+                        return (
+                          <div key={itemIndex} className="sequencing-item-row">
+                            <label className="sequencing-item-label">
+                              <span className="sequencing-item-text">{item}</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max={question.items!.length}
+                                value={position}
+                                onChange={(e) => {
+                                  const newPosition = e.target.value === '' ? '' : parseInt(e.target.value)
+                                  const currentOrder = answers[question.id] ? JSON.parse(answers[question.id]) : {}
+                                  const newOrder = { ...currentOrder, [itemIndex]: newPosition }
+                                  setAnswers({
+                                    ...answers,
+                                    [question.id]: JSON.stringify(newOrder)
+                                  })
+                                }}
+                                placeholder="Position"
+                                className="sequencing-position-input"
+                              />
+                            </label>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
                   </div>

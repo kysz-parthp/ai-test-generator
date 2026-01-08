@@ -1359,6 +1359,128 @@ body {
   font-style: italic;
 }
 
+/* Sequencing Question Styles */
+.sequencing-input {
+  margin-top: 1rem;
+}
+
+.sequencing-hint {
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  font-style: italic;
+}
+
+.sequencing-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.sequencing-item-row {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  background-color: #f9fafb;
+}
+
+.sequencing-item-label {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.sequencing-item-text {
+  flex: 1;
+  font-weight: 500;
+}
+
+.sequencing-position-input {
+  width: 80px;
+  padding: 0.5rem;
+  border: 2px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  font-family: inherit;
+  text-align: center;
+  background-color: white;
+  transition: all 0.2s;
+}
+
+.sequencing-position-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.sequencing-results {
+  margin-top: 1rem;
+}
+
+.sequencing-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.sequencing-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.sequencing-column h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.sequencing-list {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sequencing-list li {
+  padding: 0.5rem;
+  border-radius: 6px;
+  background-color: #f9fafb;
+  border-left: 4px solid var(--border-color);
+}
+
+.sequencing-list.correct li {
+  background-color: var(--correct-bg);
+  border-left-color: var(--correct-border);
+}
+
+.sequencing-item.correct {
+  background-color: var(--correct-bg);
+  border-left-color: var(--correct-border);
+}
+
+.sequencing-item.incorrect {
+  background-color: var(--incorrect-bg);
+  border-left-color: var(--incorrect-border);
+}
+
+.no-answer {
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .sequencing-comparison {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Composite Question Styles */
 .composite-input {
   margin-top: 1rem;
