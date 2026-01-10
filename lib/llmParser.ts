@@ -17,7 +17,10 @@ const MultipleAnswerQuestionSchema = z.object({
   questionType: z.literal('multiple_answer'),
   questionText: z.string(),
   options: z.array(z.string()).min(2),
-  correctAnswers: z.array(z.number().int().min(0)).nullable().optional(),
+      correctAnswers: z.union([
+        z.array(z.number().int().min(0)),
+        z.string(), // Allow string format for concatenated digits like "13", "3456"
+      ]).nullable().optional(),
   answerProvided: z.boolean().optional(),
 })
 
@@ -107,6 +110,7 @@ export type ParsedQuestion = z.infer<typeof QuestionSchema>
 
 /**
  * Cleans the LLM response by removing markdown code blocks and extra whitespace
+ * Also fixes common JSON issues like unescaped control characters
  */
 function cleanJsonResponse(responseText: string): string {
   let cleaned = responseText.trim()
@@ -124,7 +128,64 @@ function cleanJsonResponse(responseText: string): string {
     cleaned = jsonMatch[0]
   }
   
-  return cleaned
+  // Fix unescaped control characters in JSON strings
+  // We need to escape control characters that appear inside string literals
+  // Strategy: Find all string literals and escape control characters within them
+  let result = ''
+  let inString = false
+  let escapeNext = false
+  
+  for (let i = 0; i < cleaned.length; i++) {
+    const char = cleaned[i]
+    const code = char.charCodeAt(0)
+    
+    if (escapeNext) {
+      // We're escaping the next character, so just add it as-is
+      result += char
+      escapeNext = false
+      continue
+    }
+    
+    if (char === '\\') {
+      // Escape sequence - don't process the next character
+      result += char
+      escapeNext = true
+      continue
+    }
+    
+    if (char === '"') {
+      // Toggle string state
+      inString = !inString
+      result += char
+      continue
+    }
+    
+    if (inString) {
+      // We're inside a string literal
+      // Check if this is a control character that needs escaping
+      if (code >= 0x00 && code <= 0x1F && code !== 0x09 && code !== 0x0A && code !== 0x0D) {
+        // Control character that's not tab, newline, or carriage return
+        // Escape it as \uXXXX
+        result += '\\u' + ('0000' + code.toString(16)).slice(-4)
+      } else if (code === 0x09) {
+        // Tab - keep as-is or escape as \t
+        result += '\\t'
+      } else if (code === 0x0A) {
+        // Newline - escape as \n
+        result += '\\n'
+      } else if (code === 0x0D) {
+        // Carriage return - escape as \r
+        result += '\\r'
+      } else {
+        result += char
+      }
+    } else {
+      // Outside string literal - add as-is
+      result += char
+    }
+  }
+  
+  return result
 }
 
 /**
@@ -227,6 +288,119 @@ function parseMatchingString(matchesString: string | null | undefined): Array<{ 
 }
 
 /**
+ * Parses answer strings like "13" (meaning options 1 and 3) or "1,3" or "[1,3]"
+ * and converts them to 0-based indices array [0, 2].
+ * Handles various formats:
+ * - "13" -> [0, 2] (concatenated digits)
+ * - "1,3" -> [0, 2] (comma-separated)
+ * - "[1,3]" -> [0, 2] (JSON array string)
+ * - "[0,2]" -> [0, 2] (already 0-based)
+ */
+function parseMultipleAnswerString(answerString: string | number[] | null | undefined): number[] | null {
+  if (!answerString) return null
+  
+  // If already an array, check if it needs conversion
+  if (Array.isArray(answerString)) {
+    if (answerString.length === 0) return null
+    
+    // Check if values are out of bounds (indicating 1-based that needs conversion)
+    // If any value equals or exceeds a reasonable option count (e.g., 6+), it's likely 1-based
+    // But if values are 0-5 range, they could be either, so check the pattern
+    
+    // If array contains 0, it might be already 0-based OR incorrectly parsed concatenated digits
+    // Example: LLM might parse "13" as [0, 1] (wrong) when it should be [0, 2]
+    // We can't reliably detect this without the original string format
+    // So we'll keep it as-is, but log a warning if it looks suspicious
+    const hasZero = answerString.includes(0)
+    if (hasZero) {
+      // Check if array looks like consecutive numbers [0, 1, 2] which might indicate mis-parsing
+      // But we can't be sure, so we'll keep it as-is
+      // The real fix is ensuring LLM returns string format
+      const sorted = [...answerString].sort((a, b) => a - b)
+      const isConsecutive = sorted.length > 1 && sorted.every((val, idx) => idx === 0 || val === sorted[idx - 1] + 1)
+      if (isConsecutive && sorted.length <= 4) {
+        console.warn(`Warning: Array ${JSON.stringify(answerString)} looks like consecutive numbers starting from 0. This might be incorrectly parsed concatenated digits. Consider returning as string format instead.`)
+      }
+      return answerString.filter(val => val >= 0)
+    }
+    
+    // If no zero and all values >= 1, check if conversion makes sense
+    // If max value is >= 6 (typical max options), likely 1-based
+    const maxValue = Math.max(...answerString)
+    const minValue = Math.min(...answerString)
+    
+    // If values are 1-5 range, could be either, but if LLM returned array format,
+    // it should have already converted. However, if it didn't, we need to convert.
+    // More conservative: only convert if we're confident it's 1-based
+    // (values like 1,2,3,4,5,6 suggest 1-based numbering)
+    if (minValue >= 1 && maxValue <= 10) {
+      // Likely 1-based (common in documents: options numbered 1-6)
+      // Convert to 0-based
+      const converted = answerString.map(val => val - 1).filter(val => val >= 0)
+      console.log(`Converting array from 1-based [${answerString.join(', ')}] to 0-based [${converted.join(', ')}]`)
+      return converted
+    }
+    
+    // Already 0-based or unusual format
+    return answerString.filter(val => val >= 0)
+  }
+  
+  if (typeof answerString !== 'string') return null
+  
+  try {
+    const trimmed = answerString.trim()
+    
+    // Try parsing as JSON array first
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        // Check if 1-based or 0-based
+        const maxValue = Math.max(...parsed)
+        if (maxValue >= parsed.length) {
+          return parsed.map(val => val - 1).filter(val => val >= 0)
+        }
+        return parsed.filter(val => val >= 0)
+      }
+    }
+    
+    // Try comma-separated format "1,3" or "1, 3"
+    if (trimmed.includes(',')) {
+      const parts = trimmed.split(',').map(p => parseInt(p.trim(), 10)).filter(n => !isNaN(n))
+      if (parts.length > 0) {
+        // Assume 1-based, convert to 0-based
+        return parts.map(val => val - 1).filter(val => val >= 0)
+      }
+    }
+    
+    // Try concatenated digits format "13" (meaning options 1 and 3) or "3456" (options 3,4,5,6)
+    // This is common in Russian test formats and other languages
+    // IMPORTANT: Each digit represents a separate option number
+    const digitMatch = trimmed.match(/^\d+$/)
+    if (digitMatch) {
+      // Split into individual digits and parse each
+      const digits = trimmed.split('').map(d => parseInt(d, 10)).filter(n => !isNaN(n) && n > 0)
+      // Convert each digit from 1-based to 0-based
+      const result = digits.map(val => val - 1).filter(val => val >= 0)
+      console.log(`Parsed concatenated digits "${trimmed}" -> individual digits: [${digits.join(', ')}] -> 0-based indices: [${result.join(', ')}]`)
+      if (result.length > 0) {
+        return result
+      }
+    }
+    
+    // Try single number
+    const singleNum = parseInt(trimmed, 10)
+    if (!isNaN(singleNum) && singleNum > 0) {
+      return [singleNum - 1] // Convert 1-based to 0-based
+    }
+    
+    return null
+  } catch (error) {
+    console.warn('Failed to parse multiple answer string:', answerString, error)
+    return null
+  }
+}
+
+/**
  * Post-processes questions to convert option labels from letters to numbers
  * and ensures all options are properly formatted.
  */
@@ -241,6 +415,32 @@ function postProcessQuestions(questions: ParsedQuestion[]): ParsedQuestion[] {
         const converted = convertOptionLabels(opt)
         return converted ? converted.text : opt
       })
+      
+      // For multiple answer questions, parse and normalize the correctAnswers
+      if (question.questionType === 'multiple_answer' && question.correctAnswers !== null && question.correctAnswers !== undefined) {
+        // Parse and convert correctAnswers to 0-based indices
+        // Handles: string "13", string "[1,3]", array [1,3], array [0,2]
+        console.log('Processing multiple_answer question. Original correctAnswers:', JSON.stringify(question.correctAnswers), 'Type:', typeof question.correctAnswers)
+        const parsedAnswers = parseMultipleAnswerString(question.correctAnswers as any)
+        console.log('Parsed answers:', parsedAnswers)
+        if (parsedAnswers && parsedAnswers.length > 0) {
+          // Ensure all indices are valid (within bounds of options array)
+          const validAnswers = parsedAnswers.filter(idx => idx >= 0 && idx < processedOptions.length)
+          console.log('Valid answers after filtering:', validAnswers, 'Options count:', processedOptions.length)
+          if (validAnswers.length > 0) {
+            return {
+              ...question,
+              questionText: cleanedQuestionText,
+              options: processedOptions,
+              correctAnswers: validAnswers,
+            }
+          } else {
+            console.warn('Multiple answer question has no valid correct answers after parsing:', question.correctAnswers, 'Parsed:', parsedAnswers, 'Options:', processedOptions.length)
+          }
+        } else {
+          console.warn('Failed to parse correctAnswers for multiple answer question. Original:', question.correctAnswers, 'Type:', typeof question.correctAnswers)
+        }
+      }
       
       return {
         ...question,
@@ -314,18 +514,34 @@ export async function parseQuestionsFromText(
 You must strictly obey ALL rules below. Any violation is considered an error.
 
 ═══════════════════════════════════════════════════════════════
+0. STRICT SOURCE-ONLY POLICY (ABSOLUTE MANDATORY)
+═══════════════════════════════════════════════════════════════
+
+* **USE ONLY INFORMATION FROM THE UPLOADED DOCUMENT**
+* **DO NOT INFER, ASSUME, OR ADD ANY CONTENT BEYOND WHAT IS EXPLICITLY MENTIONED**
+* **DO NOT USE EXTERNAL KNOWLEDGE OR REASONING TO COMPLETE ANSWERS**
+* **DO NOT GENERATE OR CREATE CONTENT THAT IS NOT IN THE DOCUMENT**
+
+* Every piece of information (questions, options, answers, instructions) MUST come directly from the document text.
+* If information is missing from the document, mark it as missing - DO NOT fill it in.
+* If an answer is not explicitly stated, DO NOT create one - mark the question as invalid.
+* Your role is to EXTRACT and STRUCTURE what exists in the document, NOT to add or complete missing information.
+
+═══════════════════════════════════════════════════════════════
 1. ANSWER SOURCE OF TRUTH (MANDATORY)
 ═══════════════════════════════════════════════════════════════
 
-* Every question includes a clearly defined correct answer in the document (e.g., "Answer: ...", "Correct Answer: ...", "Key: ...", "Correct: ...", "Верно" / "Неверно" for true/false).
+* Every question includes a clearly defined correct answer in the document. Look for answer markers in any language or format (e.g., "Answer:", "Correct Answer:", "Key:", "Correct:", or equivalent terms in other languages, true/false indicators, etc.).
 
-* You MUST ONLY extract and use this provided answer.
+* You MUST ONLY extract and use answers that are EXPLICITLY PROVIDED in the document.
 
-* ❌ NEVER infer, guess, complete, or generate answers.
+* ❌ NEVER infer, guess, complete, generate, or assume answers.
+* ❌ NEVER use your knowledge to determine what the answer "should be".
+* ❌ NEVER complete partial answers or fill in missing information.
 
 * If an answer is missing or ambiguous, DO NOT include the question in the "questions" array. Instead, add it to the "invalidQuestions" array with the reason.
 
-* Set "answerProvided": true ONLY if you found an explicit answer in the document. Set it to false if you're including the question without an answer.
+* Set "answerProvided": true ONLY if you found an explicit, complete answer in the document. Set it to false if you're including the question without an answer.
 
 ═══════════════════════════════════════════════════════════════
 2. FULL TASK COMPREHENSION (HOLISTIC PARSING)
@@ -343,18 +559,20 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 
 * Do NOT rely on punctuation (such as "?") to determine intent.
 
-* Correctly determine:
-  - Single-choice vs multiple-choice
-  - Required number of correct answers
-  - Special constraints or clarifications
+* Correctly determine FROM THE DOCUMENT:
+  - Single-choice vs multiple-choice (based on instructions in the document)
+  - Required number of correct answers (based on what the document states)
+  - Special constraints or clarifications (extract exactly as written)
 
 ═══════════════════════════════════════════════════════════════
 3. PRESERVE FULL QUESTION TEXT (NO TRUNCATION)
 ═══════════════════════════════════════════════════════════════
 
-* Extract and reproduce the ENTIRE question text verbatim.
+* Extract and reproduce the ENTIRE question text verbatim FROM THE DOCUMENT.
 
 * ❌ Do NOT shorten, paraphrase, summarize, or omit any part.
+* ❌ Do NOT add explanatory text or context that is not in the document.
+* ❌ Do NOT complete incomplete sentences or thoughts.
 
 * This includes:
   - Multi-line questions
@@ -365,12 +583,12 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 
 * For "questionText", include the FULL instruction/question text, BUT remove any parenthetical option lists or trailing option lists (e.g., "(1) option A 2) option B 3) option C 4) option D" or "1) option A 2) option B 3) option C 4) option D") from the questionText since these will be displayed separately in the options array. This prevents duplication. Preserve all other text verbatim.
 
-* **CRITICAL**: If the question text contains condition items (e.g., "А) statement 1 Б) statement 2") that are ALSO listed as answer choices, you MUST remove them from the questionText to avoid duplication. Only include them in the options array.
+* **CRITICAL**: If the question text contains condition items that are ALSO listed as answer choices, you MUST remove them from the questionText to avoid duplication. Only include them in the options array.
 
 * **CRITICAL FOR FILL-IN-THE-BLANK QUESTIONS**: 
   - Include the COMPLETE instruction text
-  - Include the ENTIRE passage/text with all blanks (e.g., ___________(А), ___________(Б), etc.)
-  - Include the FULL list of terms/options to choose from (e.g., "ПЕРЕЧЕНЬ ТЕРМИНОВ:")
+  - Include the ENTIRE passage/text with all blanks (preserve all blank markers as they appear)
+  - Include the FULL list of terms/options to choose from (preserve any term lists, option lists, or reference materials)
   - Include any tables or answer formats
   - DO NOT truncate or summarize any part of the fill-in-blank structure
   - The questionText must contain everything a student needs to answer the question
@@ -408,13 +626,11 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 6. TRUE/FALSE QUESTION HANDLING
 ═══════════════════════════════════════════════════════════════
 
-* Automatically recognize true/false questions (questions with only two possible answers: true or false, yes or no, верно or неверно).
+* Automatically recognize true/false questions (questions with only two possible answers, regardless of language).
 
 * Use questionType "true_false" for these questions.
 
-* Set "correctAnswer" to true or false based on the provided answer.
-
-* Common indicators: "Верно/Неверно", "True/False", "Yes/No", "Да/Нет"
+* Set "correctAnswer" to true or false based on the provided answer. Detect the correct answer from the document's answer format, regardless of language.
 
 ═══════════════════════════════════════════════════════════════
 7. SEQUENCING/ORDERING QUESTION HANDLING
@@ -430,7 +646,7 @@ You must strictly obey ALL rules below. Any violation is considered an error.
   Example: If items are ["First", "Second", "Third"] and correct order is ["Second", "First", "Third"],
   then correctOrder should be [1, 0, 2] (0-based indices).
 
-* Common indicators: "Arrange in order", "Put in sequence", "Order the following", "Расположите в порядке"
+* Detect sequencing tasks by identifying instructions that require ordering or arranging items, regardless of language.
 
 * The items array MUST contain all items that need to be sequenced. Without items, sequencing is impossible.
 
@@ -441,11 +657,12 @@ You must strictly obey ALL rules below. Any violation is considered an error.
 * Output must be:
   - Structurally identical to the source test
   - Fully deterministic and reproducible
-  - Free from hallucination
+  - Free from hallucination, inference, or assumption
   - Free from truncation or rewording
   - Free from duplication (options should NOT appear in both questionText and options array)
+  - Containing ONLY information explicitly present in the uploaded document
 
-* If any rule cannot be satisfied, fail explicitly by adding the question to "invalidQuestions" rather than generating incorrect output.
+* If any rule cannot be satisfied, fail explicitly by adding the question to "invalidQuestions" rather than generating incorrect output or inferring missing information.
 
 ═══════════════════════════════════════════════════════════════
 RETURN FORMAT
@@ -465,11 +682,18 @@ Return a JSON object with this structure:
       
       // For multiple_answer:
       "options": ["Option text", ...],
-      "correctAnswers": [0, 2],  // Array of 0-based indices, null if answer not provided
+      "correctAnswers": [0, 2] | "13" | "3456" | "1,3",  // Can be array of 0-based indices OR original string format from document
+      // CRITICAL: Extract the answer EXACTLY as it appears in the document (as a string)
+      // If document says "3456", return "3456" (string) - do NOT convert to array
+      // If document says "13", return "13" (string) - do NOT convert to array  
+      // If document says "1,3", return "1,3" (string) - do NOT convert to array
+      // The system will parse and convert the string format automatically
+      // ONLY return array format if the document itself uses array notation like "[1,3]"
+      // Preserve the EXACT format from the document - this ensures all digits are captured correctly
       
       // For fill_blank:
-      // questionText must include: instruction + full passage with blanks + list of terms
-      // Example: "Вставьте в текст... PASSAGE WITH BLANKS... ПЕРЕЧЕНЬ ТЕРМИНОВ: 1) term1 2) term2..."
+      // questionText must include: instruction + full passage with blanks + list of terms/options
+      // Preserve the complete structure as it appears in the document
       "correctText": "answer",  // null if answer not provided
       
       // For descriptive:
@@ -504,20 +728,34 @@ Return a JSON object with this structure:
 }
 
 CRITICAL INSTRUCTIONS:
-- Extract answers ONLY from explicit markers like "Answer:", "Correct Answer:", "Key:", "Correct:", "Верно", "Неверно"
-- If no answer is found, add to "invalidQuestions" array
-- Preserve ENTIRE question text verbatim - no truncation, no summarization
-- **IMPORTANT**: Remove parenthetical option lists AND trailing option lists from questionText (e.g., "(1) option A 2) option B 3) option C 4) option D" or "1) option A 2) option B") since options are displayed separately. Keep all other question text intact.
+- **SOURCE-ONLY POLICY**: Use ONLY information and answers explicitly provided in the uploaded document. Do NOT infer, assume, or add any content beyond what is explicitly mentioned.
+- Extract answers ONLY from explicit answer markers found in the document (detect answer indicators in any language or format)
+- If no answer is found in the document, add to "invalidQuestions" array - DO NOT create or infer an answer
+- Preserve ENTIRE question text verbatim FROM THE DOCUMENT - no truncation, no summarization, no additions
+- **IMPORTANT**: Remove parenthetical option lists AND trailing option lists from questionText since options are displayed separately. Keep all other question text intact AS IT APPEARS IN THE DOCUMENT.
 - **CRITICAL**: If condition items appear BOTH in the question text AND as answer choices, remove them from questionText to avoid duplication. Only include them in the options array.
-- **CRITICAL FOR FILL-IN-THE-BLANK**: Include the COMPLETE instruction, the ENTIRE passage with blanks, and the FULL list of terms/options. DO NOT truncate any part of fill-in-blank questions.
-- Remove label prefixes (A), B), etc.) from option text in the options array
-- Convert answer letters to 0-based indices (A=0, B=1, C=2, D=3)
-- For matching questions, use string format "1-3, 2-1" for correctMatches
-- For true/false questions, use questionType "true_false" and set correctAnswer to true or false
-- For sequencing questions, use questionType "sequencing", extract all items into "items" array, and provide correctOrder as array of 0-based indices
-- **CRITICAL FOR SEQUENCING**: The items array MUST contain all items to sequence. Without items, sequencing is impossible.
-- Treat all related text blocks as a single task condition
-- Do NOT infer or guess answers - only extract what is explicitly provided
+- **CRITICAL FOR FILL-IN-THE-BLANK**: Include the COMPLETE instruction, the ENTIRE passage with blanks, and the FULL list of terms/options AS THEY APPEAR IN THE DOCUMENT. DO NOT truncate any part of fill-in-blank questions. DO NOT add missing blanks or terms.
+- Remove label prefixes from option text in the options array (detect and remove any label format: letters, numbers, symbols, etc.) - but preserve the actual option text exactly as written
+- Convert answer identifiers to 0-based indices based on how options are numbered in the document - extract the numbering system FROM THE DOCUMENT
+- **CRITICAL FOR MULTIPLE ANSWER QUESTIONS**: Extract the answer EXACTLY as it appears in the document.
+  - **MANDATORY FORMAT**: ALWAYS return the answer as a STRING in the exact format from the document
+  - If document says "3456", return "3456" (string) - DO NOT convert to array [2,3,4,5] or [3,4,5,6]
+  - If document says "13", return "13" (string) - DO NOT convert to array [0,1] or [0,2]
+  - If document says "1,3", return "1,3" (string) - DO NOT convert to array
+  - If document says "1 3", return "1 3" (string) - preserve the exact format
+  - **DO NOT parse concatenated digits yourself** - return the string as-is
+  - **DO NOT convert to array format** - the system will parse the string automatically
+  - The system's parser will automatically convert string formats to 0-based indices
+  - **NEVER return array format** - always return as string to ensure accuracy
+  - Do not skip any digits or numbers mentioned in the document answer
+- For matching questions, extract the matching format FROM THE DOCUMENT and convert to the required string format "left-right pairs" (1-based indices)
+- For true/false questions, use questionType "true_false" and extract correctAnswer FROM THE DOCUMENT'S answer format - do not determine based on question content
+- For sequencing questions, use questionType "sequencing", extract all items FROM THE DOCUMENT into "items" array, and extract correctOrder FROM THE DOCUMENT as array of 0-based indices
+- **CRITICAL FOR SEQUENCING**: The items array MUST contain all items to sequence AS THEY APPEAR IN THE DOCUMENT. Without items explicitly listed in the document, sequencing is impossible - mark as invalid.
+- Treat all related text blocks as a single task condition - but ONLY include text that is actually in the document
+- Do NOT infer or guess answers - only extract what is explicitly provided in the document
+- Do NOT use external knowledge to complete or verify answers
+- **DYNAMIC FORMAT DETECTION**: Analyze the document's answer format and numbering system FROM THE DOCUMENT ITSELF, then convert accordingly. Do not assume a specific format - detect it from the document itself.
 
 Text to parse:
 ${text}`
@@ -531,13 +769,16 @@ ${text}`
           content:
             'You are an AI engine embedded in a test-generation system. Your task is to parse test documents with ABSOLUTE FIDELITY.\n\n' +
             'CRITICAL RULES:\n' +
-            '1. ANSWER SOURCE OF TRUTH: Only extract answers explicitly provided in the document (e.g., "Answer:", "Correct Answer:", "Key:", "Верно", "Неверно"). NEVER infer, guess, or generate answers. If answer is missing, add question to "invalidQuestions" array.\n' +
-            '2. FULL TASK COMPREHENSION: Treat ALL related text blocks as a single task condition, even if separated by line breaks or in different sections.\n' +
-            '3. PRESERVE FULL QUESTION TEXT: Extract ENTIRE question text verbatim - NO truncation, NO summarization, NO paraphrasing. CRITICAL: Remove option lists from questionText to avoid duplication (options go in the options array). If condition items appear BOTH in question text AND as answer choices, remove them from questionText. For fill-in-the-blank questions, include the COMPLETE instruction, ENTIRE passage with blanks, and FULL list of terms.\n' +
-            '4. ANSWER OPTION LABEL CONVERSION: Remove label prefixes (A), B), etc.) from option text. Convert answer letters to 0-based indices (A=0, B=1, C=2, D=3).\n' +
-            '5. MATCHING TASKS: Use string format "1-3, 2-1" for correctMatches (1-based indices).\n' +
-            '6. TRUE/FALSE QUESTIONS: Use questionType "true_false" for true/false questions. Set correctAnswer to true or false.\n' +
-            '7. OUTPUT INTEGRITY: If any rule cannot be satisfied, fail explicitly by adding to "invalidQuestions" rather than generating incorrect output. NO DUPLICATION of options in questionText and options array.\n\n' +
+            '0. STRICT SOURCE-ONLY POLICY: Use ONLY information and answers explicitly provided in the uploaded document. Do NOT infer, assume, or add any content beyond what is explicitly mentioned. Do NOT use external knowledge or reasoning to complete answers.\n' +
+            '1. ANSWER SOURCE OF TRUTH: Extract answers ONLY from explicit answer markers found in the document (in any language or format). NEVER infer, guess, generate, or assume answers. If answer is missing from the document, add question to "invalidQuestions" array - DO NOT create an answer.\n' +
+            '2. FULL TASK COMPREHENSION: Treat ALL related text blocks as a single task condition, but ONLY include text that is actually present in the document.\n' +
+            '3. PRESERVE FULL QUESTION TEXT: Extract ENTIRE question text verbatim FROM THE DOCUMENT - NO truncation, NO summarization, NO paraphrasing, NO additions. CRITICAL: Remove option lists from questionText to avoid duplication (options go in the options array). If condition items appear BOTH in question text AND as answer choices, remove them from questionText. For fill-in-the-blank questions, include the COMPLETE instruction, ENTIRE passage with blanks, and FULL list of terms AS THEY APPEAR IN THE DOCUMENT.\n' +
+            '4. ANSWER OPTION LABEL CONVERSION: Detect and remove label prefixes from option text (any format: letters, numbers, symbols). Convert answer identifiers to 0-based indices based on the document\'s numbering system AS IT APPEARS IN THE DOCUMENT.\n' +
+            '5. MULTIPLE ANSWER FORMAT: MANDATORY - ALWAYS return answer as STRING in exact format from document. If document says "3456", return "3456" (string, NOT array). If "13", return "13" (string, NOT [0,1] or [0,2]). If "1,3", return "1,3" (string). DO NOT convert to array. DO NOT parse concatenated digits. Return the EXACT string from document. System will parse automatically.\n' +
+            '6. MATCHING TASKS: Extract the matching format FROM THE DOCUMENT and convert to string format "left-right pairs" (1-based indices).\n' +
+            '7. TRUE/FALSE QUESTIONS: Use questionType "true_false" for true/false questions. Extract the correct answer FROM THE DOCUMENT\'S answer format - do not determine based on question content or external knowledge.\n' +
+            '8. DYNAMIC FORMAT DETECTION: Analyze the document\'s answer format, numbering system, and language conventions FROM THE DOCUMENT ITSELF. Do not assume specific formats - detect them from the document itself.\n' +
+            '9. OUTPUT INTEGRITY: If any rule cannot be satisfied, fail explicitly by adding to "invalidQuestions" rather than generating incorrect output or inferring missing information. NO DUPLICATION of options in questionText and options array. NO ADDITION of content not in the document.\n\n' +
             'Return valid JSON only. Do not include any text before or after the JSON object.',
         },
         {
@@ -562,8 +803,31 @@ ${text}`
     try {
       parsed = JSON.parse(cleanedResponse)
     } catch (parseError) {
-      console.error('Failed to parse JSON. Raw response:', responseText.substring(0, 500))
-      throw new Error(`Invalid JSON response from LLM: ${parseError instanceof Error ? parseError.message : 'Unknown error'}`)
+      // Log more details about the error
+      const errorPos = parseError instanceof SyntaxError && 'position' in parseError 
+        ? (parseError as any).position 
+        : null
+      
+      console.error('Failed to parse JSON.')
+      console.error('Error:', parseError instanceof Error ? parseError.message : 'Unknown error')
+      if (errorPos !== null) {
+        console.error('Error position:', errorPos)
+        const start = Math.max(0, errorPos - 100)
+        const end = Math.min(cleanedResponse.length, errorPos + 100)
+        console.error('Context around error:', cleanedResponse.substring(start, end))
+      }
+      console.error('First 1000 chars of cleaned response:', cleanedResponse.substring(0, 1000))
+      console.error('First 1000 chars of raw response:', responseText.substring(0, 1000))
+      
+      // Try a more aggressive fix: replace problematic control characters
+      try {
+        // Replace all control characters except \n, \r, \t with spaces
+        const fixedResponse = cleanedResponse.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, ' ')
+        parsed = JSON.parse(fixedResponse)
+        console.warn('Successfully parsed after aggressive control character removal')
+      } catch (secondError) {
+        throw new Error(`Invalid JSON response from LLM: ${parseError instanceof Error ? parseError.message : 'Unknown error'}. Position: ${errorPos || 'unknown'}`)
+      }
     }
 
     if (!parsed.questions || !Array.isArray(parsed.questions)) {
@@ -581,8 +845,26 @@ ${text}`
     // Validate questions
     const validated = QuestionsResponseSchema.parse(parsed)
     
+    // Log multiple answer questions before post-processing
+    validated.questions.forEach((q, idx) => {
+      if (q.questionType === 'multiple_answer') {
+        console.log(`Question ${idx + 1} (multiple_answer) - Before post-processing:`)
+        console.log(`  correctAnswers:`, q.correctAnswers, `Type:`, typeof q.correctAnswers, `IsArray:`, Array.isArray(q.correctAnswers))
+        console.log(`  options count:`, q.options?.length)
+      }
+    })
+    
     // Post-process questions to convert option labels and clean up
     const processedQuestions = postProcessQuestions(validated.questions)
+    
+    // Log multiple answer questions after post-processing
+    processedQuestions.forEach((q, idx) => {
+      if (q.questionType === 'multiple_answer') {
+        console.log(`Question ${idx + 1} (multiple_answer) - After post-processing:`)
+        console.log(`  correctAnswers:`, q.correctAnswers, `Type:`, typeof q.correctAnswers, `IsArray:`, Array.isArray(q.correctAnswers))
+        console.log(`  options count:`, q.options?.length)
+      }
+    })
     
     return processedQuestions
   } catch (error: any) {

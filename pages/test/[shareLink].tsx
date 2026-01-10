@@ -407,11 +407,11 @@ export default function TestPage() {
                                 <span className="matching-left-item">{leftItem}</span>
                                 <span className="matching-arrow">→</span>
                                 <span className="matching-right-item">
-                                  {userMatch !== undefined && userMatch !== null
+                                  {userMatch !== undefined && userMatch !== null && result.rightColumn
                                     ? result.rightColumn[userMatch]
                                     : '(Not matched)'}
                                 </span>
-                                {correctMatch && (
+                                {correctMatch && result.rightColumn && (
                                   <span className="matching-correct">
                                     (Correct: {result.rightColumn[correctMatch.rightIndex]})
                                   </span>

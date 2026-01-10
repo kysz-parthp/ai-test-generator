@@ -244,9 +244,9 @@ async function handler(
             } else if (q.questionType === 'true_false') {
               // For true/false questions, store the correct answer
               baseData.correctAnswer = 'correctAnswer' in q ? q.correctAnswer : null
-            } else if (q.questionType === 'matching') {
+            } else if (q.questionType === 'matching' && 'leftColumn' in q && 'rightColumn' in q) {
               // For matching questions, store left and right columns
-              const matchingPairs = q.leftColumn.map((left, idx) => ({
+              const matchingPairs = q.leftColumn.map((left: string, idx: number) => ({
                 left,
                 right: q.rightColumn[idx] || '',
               }))

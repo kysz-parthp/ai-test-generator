@@ -59,9 +59,11 @@ export default async function handler(
         const userAnswers = userAnswer ? JSON.parse(userAnswer) : []
 
         // Check if user selected all correct answers and no incorrect ones
+        // IMPORTANT: User must select at least one answer (empty selection is incorrect)
         const userSet = new Set(userAnswers.map((a: any) => parseInt(a)))
         const correctSet = new Set(correctAnswers)
         isCorrect =
+          userSet.size > 0 && // User must select at least one answer
           userSet.size === correctSet.size &&
           Array.from(userSet).every((ans) => correctSet.has(ans))
 
